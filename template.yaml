@@ -1,0 +1,106 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  dd-cycling-club
+
+  SAM Template for dd-cycling-club
+
+Parameters:
+  Environment:
+    Type: String
+    Default: staging
+    AllowedValues:
+      - production
+      - staging
+    Description: Parameter for getting the deployment environment. Override on the command-line to deploy to production.
+  DDParamName:
+    Type: String
+    Default: DDApiKey
+    Description: Name of the parameter in AWS Systems Manager Parameter Store storing the Datadog API key.
+  Version:
+    Type: String
+    Default: 1.0.1
+    Description: Application version
+  StravaClubId:
+    Type: Number
+    Description: ID of the Strava club
+
+Globals:
+  Function:
+    Timeout: 25
+    MemorySize: 128
+    Environment:
+      Variables:
+        DD_SITE: datadoghq.com
+        ENV: !Ref Environment
+        SERVICE: dd-cycling-club
+        SOURCE: strava
+        VERSION: !Ref Version
+        DD_CLUB_ID: !Ref StravaClubId
+        CACHE_BUCKET_NAME: !Ref CacheBucket
+
+Resources:
+  ActivitySyncFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: dd-cycling-club/
+      Handler: app.activities
+      Runtime: python3.9
+      Architectures:
+        - x86_64
+      Events:
+        Activities:
+          Type: Schedule
+          Properties:
+            Schedule: 'rate(1 hour)'
+            Name: StravaActivitiesSchedule
+            Description: Log new activities hourly
+      Policies:
+        - Statement:
+          - Sid: GetDDParamPolicy
+            Effect: Allow
+            Action:
+              - ssm:GetParameter
+            Resource: !Join ['/', [!Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter', !Ref DDParamName]]
+        - S3ReadPolicy:
+            BucketName: !Ref CacheBucket
+        - S3WritePolicy:
+            BucketName: !Ref CacheBucket
+  MemberSyncFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: dd-cycling-club/
+      Handler: app.members
+      Runtime: python3.9
+      Architectures:
+        - x86_64
+      Events:
+        Members:
+          Type: Schedule
+          Properties:
+            Schedule: 'rate(1 day)'
+            Name: StravaMembersSchedule
+            Description: Update members metric daily
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref CacheBucket
+        - S3WritePolicy:
+            BucketName: !Ref CacheBucket
+        - Statement:
+          - Effect: Allow
+            Action:
+              - ssm:GetParameter
+            Resource: !Join ['/', [!Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter', !Ref DDParamName]]
+  CacheBucket:
+    Type: AWS::S3::Bucket
+
+Outputs:
+  ActivitySyncFunctionName:
+    Description: "Lambda function for logging activities"
+    Value: !Ref ActivitySyncFunction
+  MemberSyncFunctionName:
+    Description: "Lambda function for setting members metric"
+    Value: !Ref MemberSyncFunction
+  CacheBucketArn:
+    Description: "S3 bucket for persistent data"
+    Value: !Ref CacheBucket
