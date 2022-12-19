@@ -25,6 +25,8 @@ Upload an S3 object called `oauth.json` with the following content. Fill in the 
 }
 ```
 
+4. Invoke the functions manually or wait for them to run. Functions are invoked on schedules defined in the SAM template.
+
 ## To do
 - [ ] SSM Parameter defined in SAM
 - [ ] S3 `oauth.json` object defined in SAM
